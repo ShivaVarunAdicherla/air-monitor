@@ -28,4 +28,4 @@ Project Outputs*/
 CompareHistory/
 
 ### ESP-IDF ###
-./ESP_Firmware/build/*
+ESP_Firmware/build/*
