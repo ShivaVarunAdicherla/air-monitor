@@ -26,3 +26,6 @@ Project Outputs*/
 
 # Folder to save each comparison results
 CompareHistory/
+
+### ESP-IDF ###
+./ESP_Firmware/build/*
