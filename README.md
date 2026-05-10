@@ -4,8 +4,7 @@
 - Components - Arrived
 - Firmware - BLE advertisement tested
 - Enclosure - In progress - [Here](https://cad.onshape.com/documents/7cc096864f16c057a6e9d4d9/w/91c0470fa62f2376e8363204/e/8dff4a441c052faf6f8fa123)
-- Order Status - To be placed (Expected - 08/05/26)
-
+- Order Status - Placed and Inprogress/Pre-Engineering
 
 # $\mu$​Air
 $\mu$​Air is a compact air monitoring device, capable of measuring concentrations of multiple essential local atmospheric parameters like: 
@@ -60,3 +59,18 @@ AQI, as well as each of the parameters, individually, can be accessed by the use
 <img width="1159" height="1405" alt="image" src="https://github.com/user-attachments/assets/1c5418f0-02eb-43df-96ec-b4bbf9542ee6" />
 
 ## Firmware Status:
+### Framework: ESP-IDF, MicroController: ESP32-C3
+For Integration with **Home Assistant** without any other extra configuration for BLE based data broadcast devices, there's an open standard called **BTHome**.
+The Second version of the standard has been released quite recently, and the official **BTHOME** component from Espressif doesn't seem to work because it has probably been **depreciated**.
+
+Right now, the code initializes Bluetooth's BLE Stack by Apache Foundation (NimBLE), and starts advertising packets with an interval of 450ms (We've decided on
+this rate to save power, while maintaining the balance of packet reception). Right now, since actually don't have the sensor data, we're just generating a random
+number/data then building the advertisement packet and sending $\approx 16$ packets in a task loop.
+
+**Note:** We're are building our own implementation of *BTHOME* which sends the sensor data, in the service region of the advertisement packet.
+
+Since ESP-IDF has a native port of FreeRTOS, we plan to take advantage of it's powerful scheduling capabilities to make it easier to organise and build modules
+which perform certain tasks. The flowchart will look something like this.
+
+<img width="1264" height="964" alt="image" src="https://github.com/user-attachments/assets/2dbde7b3-c3be-4cbb-8722-3ff323e7405e" />
+
