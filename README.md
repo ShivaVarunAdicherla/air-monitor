@@ -33,3 +33,30 @@ AQI, as well as each of the parameters, individually, can be accessed by the use
 ## Implementation
 <img width="936" height="474" alt="image" src="https://github.com/user-attachments/assets/ced04e90-704b-43b4-b2c4-de0b72340a31" />
 
+## Schematic
+<img width="2199" height="1423" alt="image" src="https://github.com/user-attachments/assets/8450c576-bd13-4067-9372-c4b48eab0f4a" />
+
+### Explanation
+1. Power
+   - Primary Source: 1000mAh Li-Po Battery, or direct power from USB, when connected - Bypass charging handled using a PMOS and a schottky diode, as seen in the schematic.
+   - Regulated Power Supply: Buck converter (whose input comes from the output of the bypass charging module - PMOS + Schottky) steps $VIN$ down to $3.3V (V_{DD})$.
+   - All other modules, including ESP32-C3 and all the sensors use 3.3V $V_{DD}$ as their power supply.
+   - Battery Charging: Handled by DW01 (battery protection IC, inbuilt into the 1000mAh battery), and TC4056, battery charging IC (CC-CV).
+2. Sensors
+   - BMV080: Measuring PM10, PM2.5 and PM1.0 - Comes in a flex PCB package, with a corresponding female connector placed on the PCB.
+   - SCD40: Measuring $CO_2$
+   - SGP41: Measuring VOCs and $NO_x$
+   - Communication via common I2C bus (except for the BMV080, which has a separate I2C bus) to the ESP32-C3
+   - Enclosure designed with suitable openings to allow normal/optimal functioning of all the sensors, as mentioned in their respective application manuals.
+3. MCU: ESP32-C3
+   - Controls the common I2C bus to receive measurments from the sensors.
+   - Handles BLE advertising at regular intervals.
+   - Goes into sleep when not broadcasting, saving battery life.
+   - Handles the display via the common I2C bus along with a wake button to view parameters on the display.
+
+## PCB Layout
+<img width="1170" height="1383" alt="image" src="https://github.com/user-attachments/assets/5ef56341-2813-416e-8e19-cc9f20598bd8" />
+<img width="1168" height="1405" alt="image" src="https://github.com/user-attachments/assets/b1f6d486-d7f0-42ec-b303-62904a4ae48a" />
+<img width="1159" height="1405" alt="image" src="https://github.com/user-attachments/assets/1c5418f0-02eb-43df-96ec-b4bbf9542ee6" />
+
+## Firmware Status:
