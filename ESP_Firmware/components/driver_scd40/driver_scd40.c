@@ -1,4 +1,4 @@
-#include "./scd40.h"
+#include "driver_scd40.h"
 #include "driver/i2c_types.h"
 #include "esp_log.h"
 #include "hal/i2c_types.h"

@@ -1,4 +1,4 @@
-#include "./sgp41.h"
+#include "driver_sgp41.h"
 #include "driver/i2c_master.h"
 #include "driver/i2c_types.h"
 #include "esp_err.h"
