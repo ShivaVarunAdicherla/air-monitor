@@ -1,6 +1,12 @@
-#include "driver_scd40.h"
+#include "include/driver_scd40.h"
 #include "driver/i2c_types.h"
+#include "esp_compiler.h"
+#include "esp_err.h"
 #include "esp_log.h"
+#include "esp_log_buffer.h"
+#include "esp_log_level.h"
+#include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
 #include "hal/i2c_types.h"
 #include <driver/i2c_master.h>
 #include <stdint.h>
@@ -19,20 +25,17 @@
 #define SCD40_STOP_PERIODIC_MEASUREMENT (uint16_t *)"\x3f\x86"
 #define SCD40_GET_DATA_READY_STATUS (uint16_t *)"\xe4\xb8"
 #define SCD40_READ_MEASUREMENT (uint16_t *)"\xec\x05"
+#define SCD40_REINIT (uint16_t *)"\x36\x46"
 
-struct scd40 {
-  i2c_master_dev_handle_t dev_handle;
-};
-
-void scd40_init(i2c_master_bus_handle_t bus_handle, uint32_t speed,
-                scd40 *device) {
+esp_err_t scd40_init(i2c_master_bus_handle_t bus_handle, uint32_t speed,
+                     scd40 *device) {
   i2c_device_config_t config = {.device_address = 0x62,
                                 .dev_addr_length = I2C_ADDR_BIT_LEN_7,
                                 .scl_speed_hz = speed,
-                                .flags.disable_ack_check = false};
+                                .flags.disable_ack_check = false,
+                                .scl_wait_us = 5000};
 
-  ESP_ERROR_CHECK(
-      i2c_master_bus_add_device(bus_handle, &config, &device->dev_handle));
+  return i2c_master_bus_add_device(bus_handle, &config, &device->dev_handle);
 }
 
 uint8_t scd40_crc(const uint8_t *data, uint8_t count) {
@@ -52,52 +55,79 @@ uint8_t scd40_crc(const uint8_t *data, uint8_t count) {
   return crc;
 }
 
-void scd40_send_command(const uint16_t *command, scd40 *device) {
-  ESP_ERROR_CHECK(
-      i2c_master_transmit(device->dev_handle, (uint8_t *)command, 2, 20));
+esp_err_t scd40_send_command(const uint16_t *command, scd40 *device) {
+  return i2c_master_transmit(device->dev_handle, (uint8_t *)command, 2, 15);
 }
 
-void scd40_read(const uint16_t *command, scd40 *device, uint8_t *buffer,
-                uint8_t length) {
-  ESP_ERROR_CHECK(i2c_master_transmit_receive(
-      device->dev_handle, (uint8_t *)command, 2, buffer, length, 20));
+esp_err_t scd40_read(const uint16_t *command, scd40 *device, uint8_t *buffer,
+                     uint8_t length, uint8_t delay_in_ms) {
+  esp_err_t error =
+      i2c_master_transmit(device->dev_handle, (uint8_t *)command, 2, 15);
+  if (unlikely(error != ESP_OK)) {
+    OLOG("Failed a I2C Transmit");
+    return error;
+  }
+
+  vTaskDelay(pdMS_TO_TICKS(delay_in_ms));
+
+  error = i2c_master_receive(device->dev_handle, buffer, length, 15);
+  if (unlikely(error != ESP_OK)) {
+    OLOG("Failed a I2C Receive");
+    return error;
+  }
+  esp_log_buffer_hex_internal("SCD40 Driver", buffer, length, ESP_LOG_INFO);
+
+  return error;
 }
 
-void scd40_start_periodic_measurement(scd40 *device) {
-  scd40_send_command(SCD40_START_PERIODIC_MEASUREMENT, device);
+esp_err_t scd40_start_periodic_measurement(scd40 *device) {
   OLOG("Starting Periodic Measurement");
+  return scd40_send_command(SCD40_START_PERIODIC_MEASUREMENT, device);
 }
 
-void scd40_start_low_power_periodic_measurement(scd40 *device) {
-  scd40_send_command(SCD40_START_LOW_POWER_PERIODIC_MEASUREMENT, device);
+esp_err_t scd40_start_low_power_periodic_measurement(scd40 *device) {
   OLOG("Starting Low Power Periodic Measurement");
+  return scd40_send_command(SCD40_START_LOW_POWER_PERIODIC_MEASUREMENT, device);
 }
 
-void scd40_stop_periodic_measurement(scd40 *device) {
-  scd40_send_command(SCD40_STOP_PERIODIC_MEASUREMENT, device);
+esp_err_t scd40_stop_periodic_measurement(scd40 *device) {
   OLOG("Stopping Periodic Measurement");
+  return scd40_send_command(SCD40_STOP_PERIODIC_MEASUREMENT, device);
 }
 
-void scd40_read_measurement(scd40 *device, int32_t *temp_c_deg,
-                            int32_t *humidity_rh_percent, uint16_t *co2_ppm) {
+esp_err_t scd40_read_measurement(scd40 *device, int *temp_c_deg,
+                                 int *humidity_rh_percent, uint16_t *co2_ppm) {
 
   // TODO: Add Define Options to enable checking CRC. (We aren't checking now)
 
   uint8_t buf[9];
-  scd40_read(SCD40_READ_MEASUREMENT, device, buf, 9);
-  // Bit hack methods - SCD4X Datasheet pg.no 9
-  *temp_c_deg =
-      ((21875 * (int32_t)(((uint16_t)buf[3] << 8) | buf[4])) >> 13) - 45000;
+  esp_err_t error = scd40_read(SCD40_READ_MEASUREMENT, device, buf, 9, 2);
+  if (unlikely(error != ESP_OK)) {
+    OLOG("Failed Reading Measurement");
+    *temp_c_deg = 0;
+    *humidity_rh_percent = 0;
+    *co2_ppm = 0;
+    return error;
+  }
+
+  // Tick Conversion - SCD4X Datasheet pg.no 9
+  *temp_c_deg = ((((int)buf[3] << 8) | buf[4]) * 175) / ((1 << 16) - 1) - 45;
   *humidity_rh_percent =
-      ((12500 * (int32_t)(((uint16_t)buf[6] << 8) | buf[7])) >> 13);
+      ((((int)buf[6] << 8) | buf[7]) * 100) / ((1 << 16) - 1);
   *co2_ppm = ((uint16_t)buf[0] << 8) | buf[1];
-  OLOG("Attempted to read measurements");
+  OLOG("Read measurements");
+  return error;
 }
 
 uint8_t scd40_get_data_ready_status(scd40 *device) {
   uint8_t buf[3];
-  scd40_read(SCD40_GET_DATA_READY_STATUS, device, buf, 3);
-  OLOG("Polled for data ready flag");
+  scd40_read(SCD40_GET_DATA_READY_STATUS, device, buf, 3, 2);
+  // OLOG("Polled for data ready flag");
   return (((uint16_t)buf[0] << 8) | buf[1]) &
          0x7FFF; // SCD4X Datasheet pg.no 16
+}
+
+esp_err_t scd40_reinit(scd40 *device) {
+  OLOG("Restarting SCD40");
+  return scd40_send_command(SCD40_REINIT, device);
 }
